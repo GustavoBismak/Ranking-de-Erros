@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard de Erros</title>
+
+  <!-- Ícone do Sistema -->
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>">
+
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- jsPDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <!-- Flatpickr (Date Range Picker) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <link rel="stylesheet" type="text/css" href="https://npmcdn.com/flatpickr/dist/themes/dark.css">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://npmcdn.com/flatpickr/dist/l10n/pt.js"></script>
+</head>
+
+<body>
+
+  <div class="container">
+    <header>
+      <h1>Ranking de quem mais erra!</h1>
+    </header>
+
+    <div class="dashboard-layout">
+
+      <!-- LADO ESQUERDO -->
+      <div class="col-left">
+        <!-- FORMULÁRIO -->
+        <div class="card form-card">
+          <form id="formErro">
+            <input type="text" id="nome" placeholder="Nome do Colaborador" list="listaColaboradores" required
+              autocomplete="off">
+            <datalist id="listaColaboradores"></datalist>
+
+            <input type="text" id="assunto" placeholder="Assunto" required autocomplete="off">
+
+            <select id="grau" required>
+              <option value="" disabled selected>Grau</option>
+              <option>Leve</option>
+              <option>Médio</option>
+              <option>Grave</option>
+            </select>
+
+            <textarea id="motivo" placeholder="Motivo/Detalhes" required></textarea>
+
+            <button type="submit">Registrar Erro</button>
+          </form>
+        </div>
+
+        <!-- FILTROS -->
+        <div class="card filtros">
+          <input type="text" id="filtroData" placeholder="Selacionar período" autocomplete="off">
+          <input type="text" id="filtroPessoa" placeholder="Filtrar Pessoa" list="listaColaboradores"
+            autocomplete="off">
+          <button onclick="filtrar()">Filtrar</button>
+          <button onclick="gerarPDF()" class="btn-secondary">Exportar PDF</button>
+        </div>
+
+        <!-- TABELA -->
+        <div class="card table-card">
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nome</th>
+                  <th>Assunto</th>
+                  <th>Grau</th>
+                  <th>Data</th>
+                  <th>Status</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="tabelaErros"></tbody>
+            </table>
+          </div>
+        </div>
+      </div> <!-- FIM LADO ESQUERDO -->
+
+      <!-- LADO DIREITO -->
+      <div class="col-right">
+        <!-- CONTADORES -->
+        <div class="stats">
+          <div class="stat leve">
+            Leve
+            <span id="countLeve">0</span>
+          </div>
+          <div class="stat medio">
+            Médio
+            <span id="countMedio">0</span>
+          </div>
+          <div class="stat grave">
+            Grave
+            <span id="countGrave">0</span>
+          </div>
+        </div>
+
+        <!-- GRÁFICO -->
+        <div class="card chart-card">
+          <canvas id="graficoRanking"></canvas>
+        </div>
+      </div> <!-- FIM LADO DIREITO -->
+
+    </div> <!-- FIM DASHBOARD LAYOUT -->
+  </div>
+
+  <script src="script.js"></script>
+</body>
+
+</html>
