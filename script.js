@@ -1,33 +1,90 @@
-let erros = JSON.parse(localStorage.getItem("erros")) || [];
-let colaboradores = JSON.parse(localStorage.getItem("colaboradores")) || [];
-let assuntos = JSON.parse(localStorage.getItem("assuntos")) || [];
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  onSnapshot,
+  deleteDoc,
+  doc,
+  updateDoc,
+  setDoc
+} from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
 
-// Limpeza única dos dados de teste criados anteriormente
-if (!localStorage.getItem("limpeza_testes_realizada")) {
-  const nomesTeste = ["joão", "joao", "maria", "felipe"];
+// Credenciais de conexão com o seu Banco de Dados no Firebase
+const firebaseConfig = {
+  apiKey: "AIzaSyBA4vkpYS3LGtigvtSrQ_b-PDpsWSSdyT0",
+  authDomain: "dashboard-erros.firebaseapp.com",
+  projectId: "dashboard-erros",
+  storageBucket: "dashboard-erros.firebasestorage.app",
+  messagingSenderId: "903332053803",
+  appId: "1:903332053803:web:c7f5e296f79fcf5fa27b6e",
+  measurementId: "G-5E8CDT4KHN"
+};
 
-  erros = erros.filter(e => !nomesTeste.includes(e.nome.toLowerCase().trim()));
-  colaboradores = colaboradores.filter(c => !nomesTeste.includes(c.toLowerCase().trim()));
+// Inicializa o Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
-  localStorage.setItem("erros", JSON.stringify(erros));
-  localStorage.setItem("colaboradores", JSON.stringify(colaboradores));
-  localStorage.setItem("limpeza_testes_realizada", "true"); // Garante que não apague Joãos verdadeiros no futuro
-}
-
+// Variáveis Globais de Estado
 let chart;
+let erros = [];
+let colaboradores = [];
+let assuntos = [];
 
-// Atualiza array de colaboradores com base nos erros
-function atualizarColaboradores() {
-  const uniqueNames = new Set([...colaboradores, ...erros.map(e => e.nome)]);
-  colaboradores = Array.from(uniqueNames).sort();
-  localStorage.setItem("colaboradores", JSON.stringify(colaboradores));
-}
+// Funções expostas no window (necessário porque o script agora é type="module")
+window.filtrar = filtrar;
+window.gerarPDF = gerarPDF;
+window.resolver = resolver;
+window.excluir = excluir;
 
-// Atualiza array de assuntos com base nos erros
-function atualizarAssuntos() {
-  const uniqueAssuntos = new Set([...assuntos, ...erros.map(e => e.assunto)]);
-  assuntos = Array.from(uniqueAssuntos).sort();
-  localStorage.setItem("assuntos", JSON.stringify(assuntos));
+// --- LISTENERS (Tempo Real) DO FIREBASE --- //
+
+// 1. Escutando a lista de colaboradores (para o autocomplete)
+onSnapshot(doc(db, "listas", "colaboradores"), (docSnap) => {
+  if (docSnap.exists()) {
+    colaboradores = docSnap.data().itens || [];
+    colaboradores.sort();
+  }
+});
+
+// 2. Escutando a lista de assuntos (para o autocomplete)
+onSnapshot(doc(db, "listas", "assuntos"), (docSnap) => {
+  if (docSnap.exists()) {
+    assuntos = docSnap.data().itens || [];
+    assuntos.sort();
+  }
+});
+
+// 3. Escutando todos os erros cadastrados
+onSnapshot(collection(db, "erros"), (snapshot) => {
+  erros = [];
+  snapshot.forEach((doc) => {
+    // Pegamos a ID do documento no firebase e juntamos com os dados
+    erros.push({ id: doc.id, ...doc.data() });
+  });
+
+  // Ordenar para sempre mostrar os mais recentes primeiro
+  erros.sort((a, b) => b.data.localeCompare(a.data));
+
+  atualizar(); // Atualiza paineis e estatísticas
+  filtrar();   // Renderiza a tabela mantendo o filtro ativo, se houver
+});
+
+// Função para salvar nova pessoa ou assunto na lista oficial independente do erro
+async function adicionarItemLista(tipo, valor) {
+  let arrayOriginal = tipo === "colaborador" ? colaboradores : assuntos;
+  let documentId = tipo === "colaborador" ? "colaboradores" : "assuntos";
+
+  if (!arrayOriginal.includes(valor)) {
+    arrayOriginal.push(valor);
+    arrayOriginal.sort();
+    try {
+      // Salva no Firestore usando merge para não apagar dados existentes sem querer
+      await setDoc(doc(db, "listas", documentId), { itens: arrayOriginal }, { merge: true });
+    } catch (e) {
+      console.error("Erro ao adicionar à lista no Firestore:", e);
+    }
+  }
 }
 
 // Configura o autocomplete para um input
@@ -75,7 +132,8 @@ function setupAutocomplete(inputId, dropdownId, dataSourceType) {
   }
 }
 
-document.getElementById("formErro").addEventListener("submit", function (e) {
+// Submissão do novo Erro
+document.getElementById("formErro").addEventListener("submit", async function (e) {
   e.preventDefault();
 
   const inputNome = document.getElementById("nome").value.trim();
@@ -94,45 +152,36 @@ document.getElementById("formErro").addEventListener("submit", function (e) {
     status: "Aberto"
   };
 
-  erros.push(erro);
-  salvar();
-  atualizarColaboradores(); // Atualiza a lista caso seja um novo nome
-  atualizarAssuntos(); // Atualiza a lista caso seja um novo assunto
-  atualizar();
-  this.reset();
+  try {
+    const btn = this.querySelector('button[type="submit"]');
+    const txtOriginal = btn.textContent;
+    btn.textContent = "Salvando...";
+    btn.disabled = true;
+
+    // 1. Salva na Coleção de Erros
+    await addDoc(collection(db, "erros"), erro);
+
+    // 2. Adiciona os nomes nas listas para o Autocomplete funcionar para todo mundo no futuro
+    await adicionarItemLista("colaborador", inputNome);
+    await adicionarItemLista("assunto", inputAssunto);
+
+    this.reset();
+    btn.textContent = txtOriginal;
+    btn.disabled = false;
+  } catch (err) {
+    console.error("Erro ao salvar cadastro:", err);
+    alert("Houve um problema de conexão com o banco de dados.");
+  }
 });
 
-function salvar() {
-  localStorage.setItem("erros", JSON.stringify(erros));
-}
-
+// Atualiza contadores e gráfico
 function atualizar() {
-  const tabela = document.getElementById("tabelaErros");
-  tabela.innerHTML = "";
-
   let leve = 0, medio = 0, grave = 0;
 
-  erros.forEach((e, index) => {
-
+  erros.forEach((e) => {
     if (e.grau === "Leve") leve++;
     if (e.grau === "Médio") medio++;
     if (e.grau === "Grave") grave++;
-
-    const statusClass = e.status === "Aberto" ? "status-aberto" : "status-resolvido";
-
-    tabela.innerHTML += `
-      <tr>
-        <td>${e.nome}</td>
-        <td>${e.assunto}</td>
-        <td>${e.grau}</td>
-        <td>${e.data.split('-').reverse().join('/')}</td>
-        <td><span class="status-badge ${statusClass}">${e.status}</span></td>
-        <td>
-          <button class="btn-resolve" onclick="resolver(${index})" title="Resolver">✔</button>
-          <button class="btn-delete" onclick="excluir(${index})" title="Excluir">❌</button>
-        </td>
-      </tr>
-    `;
   });
 
   document.getElementById("countLeve").textContent = leve;
@@ -142,15 +191,12 @@ function atualizar() {
   atualizarGrafico();
 }
 
+// Renderiza o HTML da tabela (chamada dentro do filtrar())
 function renderizarTabela(lista) {
   const tabela = document.getElementById("tabelaErros");
   tabela.innerHTML = "";
 
-  lista.forEach((e, index) => {
-    // Para simplificar, quando filtrado, buscar o index original no array de erros não é tão simples.
-    // O certo seria encontrar o index original, mas usando map antes resolve.
-    // Vamos fazer direto a busca do index
-    const originalIndex = erros.indexOf(e);
+  lista.forEach((e) => {
     const statusClass = e.status === "Aberto" ? "status-aberto" : "status-resolvido";
 
     tabela.innerHTML += `
@@ -161,31 +207,37 @@ function renderizarTabela(lista) {
         <td>${e.data.split('-').reverse().join('/')}</td>
         <td><span class="status-badge ${statusClass}">${e.status}</span></td>
         <td>
-          <button class="btn-resolve" onclick="resolver(${originalIndex})" title="Resolver">✔</button>
-          <button class="btn-delete" onclick="excluir(${originalIndex})" title="Excluir">❌</button>
+          <button class="btn-resolve" onclick="resolver('${e.id}')" title="Resolver">✔</button>
+          <button class="btn-delete" onclick="excluir('${e.id}')" title="Excluir">❌</button>
         </td>
       </tr>
     `;
   });
 }
 
-
-function excluir(index) {
+// Excluir registro do Firebase
+async function excluir(id) {
   if (confirm("Tem certeza que deseja excluir este registro?")) {
-    erros.splice(index, 1);
-    salvar();
-    atualizarColaboradores();
-    atualizarAssuntos();
-    atualizar();
+    try {
+      await deleteDoc(doc(db, "erros", id));
+    } catch (err) {
+      console.error("Erro ao excluir do banco de dados:", err);
+    }
   }
 }
 
-function resolver(index) {
-  erros[index].status = "Resolvido";
-  salvar();
-  atualizar();
+// Resolver o erro no Firebase
+async function resolver(id) {
+  try {
+    await updateDoc(doc(db, "erros", id), {
+      status: "Resolvido"
+    });
+  } catch (err) {
+    console.error("Erro ao atualizar o status:", err);
+  }
 }
 
+// Filtra a tabela
 function filtrar() {
   const dataRange = document.getElementById("filtroData").value;
   const pessoa = document.getElementById("filtroPessoa").value.trim();
@@ -194,7 +246,6 @@ function filtrar() {
   let dataFim = null;
 
   if (dataRange) {
-    // Flatpickr in range mode uses ' to ' as separator
     const particoes = dataRange.split(" to ");
     dataInicio = particoes[0];
     dataFim = particoes[1] || particoes[0];
@@ -203,7 +254,6 @@ function filtrar() {
   let filtrados = erros.filter(e => {
     let matchData = true;
     if (dataInicio && dataFim) {
-      // String comparison for ISO dates ('YYYY-MM-DD') works perfectly
       matchData = e.data >= dataInicio && e.data <= dataFim;
     }
 
@@ -218,25 +268,23 @@ function filtrar() {
   renderizarTabela(filtrados);
 }
 
+// Renderiza o gráfico e Pior Desempenho
 function atualizarGrafico() {
-
   let ranking = {};
 
   erros.forEach(e => {
     ranking[e.nome] = (ranking[e.nome] || 0) + 1;
   });
 
-  // Ordenar o ranking
   const rankingOrdenado = Object.entries(ranking).sort((a, b) => b[1] - a[1]);
   const nomes = rankingOrdenado.map(item => item[0]);
   const valores = rankingOrdenado.map(item => item[1]);
 
-  // Atualizar Liderança
   const leaderCard = document.getElementById("leaderCard");
   const leaderMessage = document.getElementById("leaderMessage");
 
   if (rankingOrdenado.length > 0) {
-    const liderNome = rankingOrdenado[0][0]; // Nome do primeiro colocado
+    const liderNome = rankingOrdenado[0][0];
     leaderMessage.innerHTML = `<span class="leader-name">${liderNome}</span> está liderando da pior forma!!`;
     leaderCard.style.display = "block";
   } else {
@@ -295,7 +343,7 @@ function gerarPDF() {
       const dataFormatada = e.data.split('-').reverse().join('/');
       doc.text(`${index + 1}. Nome: ${e.nome} | Assunto: ${e.assunto} | Grau: ${e.grau} | Data: ${dataFormatada} | Status: ${e.status}`, 14, y);
       y += 10;
-      if (y > 280) { // Cria nova página se passar do limite
+      if (y > 280) {
         doc.addPage();
         y = 20;
       }
@@ -315,9 +363,45 @@ flatpickr("#filtroData", {
   placeholder: "Selecione o Período"
 });
 
-atualizarColaboradores();
-atualizarAssuntos();
+// Setup dos autocompletes
 setupAutocomplete("nome", "dropdownNome", "colaboradores");
 setupAutocomplete("filtroPessoa", "dropdownFiltro", "colaboradores");
 setupAutocomplete("assunto", "dropdownAssunto", "assuntos");
-atualizar();
+
+// Função exclusiva para migrar os dados antigos do LocalStorage do Cache de quem já estava usando pra o FIREBASE.
+async function migrarDadosLegados() {
+  const legados = JSON.parse(localStorage.getItem("erros")) || [];
+  if (legados.length > 0 && !localStorage.getItem("migrados_para_firebase")) {
+    console.log("Migrando dados do localStorage para o Firebase...");
+    let tempColabs = new Set();
+    let tempAssuntos = new Set();
+
+    for (let e of legados) {
+      if (e.nome) tempColabs.add(e.nome);
+      if (e.assunto) tempAssuntos.add(e.assunto);
+
+      try {
+        await addDoc(collection(db, "erros"), e);
+      } catch (err) { console.error("Erro ao migrar registro antigo", err); }
+    }
+
+    // Lista histórica de colaboradores do cache local
+    const colabsLegados = JSON.parse(localStorage.getItem("colaboradores")) || [];
+    colabsLegados.forEach(c => tempColabs.add(c));
+    if (tempColabs.size > 0) {
+      await setDoc(doc(db, "listas", "colaboradores"), { itens: Array.from(tempColabs).sort() }, { merge: true });
+    }
+
+    // Lista histórica de assuntos do cache local
+    const assuntosLegados = JSON.parse(localStorage.getItem("assuntos")) || [];
+    assuntosLegados.forEach(a => tempAssuntos.add(a));
+    if (tempAssuntos.size > 0) {
+      await setDoc(doc(db, "listas", "assuntos"), { itens: Array.from(tempAssuntos).sort() }, { merge: true });
+    }
+
+    // Marca como concluído no navegador desse usuário e previne repetir duas vezes
+    localStorage.setItem("migrados_para_firebase", "true");
+    console.log("Migração de dados antigos para Nuvem concluída com sucesso!");
+  }
+}
+migrarDadosLegados();
