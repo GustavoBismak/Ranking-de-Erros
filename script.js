@@ -1,22 +1,78 @@
 let erros = JSON.parse(localStorage.getItem("erros")) || [];
 let colaboradores = JSON.parse(localStorage.getItem("colaboradores")) || [];
+let assuntos = JSON.parse(localStorage.getItem("assuntos")) || [];
+
+// Limpeza única dos dados de teste criados anteriormente
+if (!localStorage.getItem("limpeza_testes_realizada")) {
+  const nomesTeste = ["joão", "joao", "maria", "felipe"];
+
+  erros = erros.filter(e => !nomesTeste.includes(e.nome.toLowerCase().trim()));
+  colaboradores = colaboradores.filter(c => !nomesTeste.includes(c.toLowerCase().trim()));
+
+  localStorage.setItem("erros", JSON.stringify(erros));
+  localStorage.setItem("colaboradores", JSON.stringify(colaboradores));
+  localStorage.setItem("limpeza_testes_realizada", "true"); // Garante que não apague Joãos verdadeiros no futuro
+}
+
 let chart;
 
-// Atualiza a datalist com colaboradores
-function atualizarListaColaboradores() {
-  const datalist = document.getElementById("listaColaboradores");
-  datalist.innerHTML = "";
-
-  // Junta os colaboradores salvos com os nomes já presentes nos erros para garantir não perder nenhum
+// Atualiza array de colaboradores com base nos erros
+function atualizarColaboradores() {
   const uniqueNames = new Set([...colaboradores, ...erros.map(e => e.nome)]);
   colaboradores = Array.from(uniqueNames).sort();
   localStorage.setItem("colaboradores", JSON.stringify(colaboradores));
+}
 
-  colaboradores.forEach(nome => {
-    const option = document.createElement("option");
-    option.value = nome;
-    datalist.appendChild(option);
+// Atualiza array de assuntos com base nos erros
+function atualizarAssuntos() {
+  const uniqueAssuntos = new Set([...assuntos, ...erros.map(e => e.assunto)]);
+  assuntos = Array.from(uniqueAssuntos).sort();
+  localStorage.setItem("assuntos", JSON.stringify(assuntos));
+}
+
+// Configura o autocomplete para um input
+function setupAutocomplete(inputId, dropdownId, dataSourceType) {
+  const input = document.getElementById(inputId);
+  const dropdown = document.getElementById(dropdownId);
+
+  dropdown.addEventListener("mousedown", (e) => {
+    if (e.target.tagName === "LI") {
+      input.value = e.target.textContent;
+      dropdown.style.display = "none";
+      if (inputId === "filtroPessoa") filtrar();
+    }
   });
+
+  input.addEventListener("input", () => renderList(input.value));
+  input.addEventListener("focus", () => renderList(input.value));
+  input.addEventListener("blur", () => {
+    dropdown.style.display = "none";
+  });
+
+  function renderList(query) {
+    const value = query.toLowerCase();
+
+    let dataSource = [];
+    if (dataSourceType === "colaboradores") {
+      dataSource = colaboradores;
+    } else if (dataSourceType === "assuntos") {
+      dataSource = assuntos;
+    }
+
+    const suggestions = dataSource.filter(c => c.toLowerCase().includes(value));
+
+    dropdown.innerHTML = "";
+    if (suggestions.length > 0) {
+      suggestions.forEach(item => {
+        const li = document.createElement("li");
+        li.textContent = item;
+        dropdown.appendChild(li);
+      });
+      dropdown.style.display = "block";
+    } else {
+      dropdown.style.display = "none";
+    }
+  }
 }
 
 document.getElementById("formErro").addEventListener("submit", function (e) {
@@ -40,7 +96,8 @@ document.getElementById("formErro").addEventListener("submit", function (e) {
 
   erros.push(erro);
   salvar();
-  atualizarListaColaboradores(); // Atualiza a lista caso seja um novo nome
+  atualizarColaboradores(); // Atualiza a lista caso seja um novo nome
+  atualizarAssuntos(); // Atualiza a lista caso seja um novo assunto
   atualizar();
   this.reset();
 });
@@ -117,7 +174,8 @@ function excluir(index) {
   if (confirm("Tem certeza que deseja excluir este registro?")) {
     erros.splice(index, 1);
     salvar();
-    atualizarListaColaboradores();
+    atualizarColaboradores();
+    atualizarAssuntos();
     atualizar();
   }
 }
@@ -172,6 +230,18 @@ function atualizarGrafico() {
   const rankingOrdenado = Object.entries(ranking).sort((a, b) => b[1] - a[1]);
   const nomes = rankingOrdenado.map(item => item[0]);
   const valores = rankingOrdenado.map(item => item[1]);
+
+  // Atualizar Liderança
+  const leaderCard = document.getElementById("leaderCard");
+  const leaderMessage = document.getElementById("leaderMessage");
+
+  if (rankingOrdenado.length > 0) {
+    const liderNome = rankingOrdenado[0][0]; // Nome do primeiro colocado
+    leaderMessage.innerHTML = `<span class="leader-name">${liderNome}</span> está liderando da pior forma!!`;
+    leaderCard.style.display = "block";
+  } else {
+    leaderCard.style.display = "none";
+  }
 
   if (chart) chart.destroy();
 
@@ -245,5 +315,9 @@ flatpickr("#filtroData", {
   placeholder: "Selecione o Período"
 });
 
-atualizarListaColaboradores();
+atualizarColaboradores();
+atualizarAssuntos();
+setupAutocomplete("nome", "dropdownNome", "colaboradores");
+setupAutocomplete("filtroPessoa", "dropdownFiltro", "colaboradores");
+setupAutocomplete("assunto", "dropdownAssunto", "assuntos");
 atualizar();
