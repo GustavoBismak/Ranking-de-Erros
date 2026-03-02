@@ -191,6 +191,9 @@ function atualizar() {
   atualizarGrafico();
 }
 
+// Expõe funções adicionais ao window
+window.verMotivo = verMotivo;
+
 // Renderiza o HTML da tabela (chamada dentro do filtrar())
 function renderizarTabela(lista) {
   const tabela = document.getElementById("tabelaErros");
@@ -199,10 +202,20 @@ function renderizarTabela(lista) {
   lista.forEach((e) => {
     const statusClass = e.status === "Aberto" ? "status-aberto" : "status-resolvido";
 
+    // Truncar motivo se for muito longo (ex: > 50 caracteres)
+    const motivoCurto = e.motivo && e.motivo.length > 50
+      ? e.motivo.substring(0, 47) + "..."
+      : (e.motivo || '-');
+
+    const motivoHTML = e.motivo && e.motivo.length > 50
+      ? `<span class="motivo-clicavel" onclick="verMotivo('${e.id}')" title="Clique para ver tudo">${motivoCurto}</span>`
+      : motivoCurto;
+
     tabela.innerHTML += `
       <tr>
         <td>${e.nome}</td>
         <td>${e.assunto}</td>
+        <td class="col-motivo">${motivoHTML}</td>
         <td>${e.grau}</td>
         <td>${e.data.split('-').reverse().join('/')}</td>
         <td><span class="status-badge ${statusClass}">${e.status}</span></td>
@@ -214,6 +227,26 @@ function renderizarTabela(lista) {
     `;
   });
 }
+
+function verMotivo(id) {
+  const erro = erros.find(e => e.id === id);
+  if (erro) {
+    document.getElementById("modalTexto").textContent = erro.motivo;
+    document.getElementById("modalMotivo").style.display = "flex";
+  }
+}
+
+// Fechar Modal
+document.querySelector(".close-modal").onclick = () => {
+  document.getElementById("modalMotivo").style.display = "none";
+};
+
+window.onclick = (event) => {
+  const modal = document.getElementById("modalMotivo");
+  if (event.target == modal) {
+    modal.style.display = "none";
+  }
+};
 
 // Excluir registro do Firebase
 async function excluir(id) {
@@ -341,7 +374,7 @@ function gerarPDF() {
   } else {
     erros.forEach((e, index) => {
       const dataFormatada = e.data.split('-').reverse().join('/');
-      doc.text(`${index + 1}. Nome: ${e.nome} | Assunto: ${e.assunto} | Grau: ${e.grau} | Data: ${dataFormatada} | Status: ${e.status}`, 14, y);
+      doc.text(`${index + 1}. Nome: ${e.nome} | Assunto: ${e.assunto} | Motivo: ${e.motivo || '-'} | Grau: ${e.grau} | Data: ${dataFormatada} | Status: ${e.status}`, 14, y);
       y += 10;
       if (y > 280) {
         doc.addPage();
